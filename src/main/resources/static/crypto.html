@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Updates</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .crypto-card {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .crypto-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .crypto-symbol {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .crypto-price {
+            font-size: 20px;
+            color: #2ecc71;
+        }
+        .crypto-price.negative {
+            color: #e74c3c;
+        }
+        .crypto-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+        }
+        .detail-label {
+            color: #666;
+        }
+        .detail-value {
+            font-weight: bold;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .status {
+            margin-bottom: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+        .auth-error {
+            color: red;
+            font-size: 18px;
+            text-align: center;
+            margin-top: 50px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Crypto Updates</h1>
+    <div class="auth-error" id="authError" style="display: none;">Неавторизований користувач</div>
+    <div id="mainContent">
+        <div class="status" id="status">Not connected</div>
+        <button id="subscribeBtn">Subscribe for Updates</button>
+        <div id="cryptoContainer"></div>
+    </div>
+</div>
+
+<script>
+    let stompClient = null;
+    const cryptoContainer = document.getElementById('cryptoContainer');
+    const statusDiv = document.getElementById('status');
+    const subscribeBtn = document.getElementById('subscribeBtn');
+    const authErrorDiv = document.getElementById('authError');
+    const mainContentDiv = document.getElementById('mainContent');
+    let isSubscribed = false;
+
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+
+    function checkAuth() {
+        const token = getCookie('access_token');
+        if (!token) {
+            mainContentDiv.style.display = 'none';
+            authErrorDiv.style.display = 'block';
+        } else {
+            mainContentDiv.style.display = 'block';
+            authErrorDiv.style.display = 'none';
+        }
+    }
+
+    // Run authentication check on page load
+    document.addEventListener('DOMContentLoaded', checkAuth);
+
+    function connect() {
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+        stompClient.connect({}, function(frame) {
+            statusDiv.textContent = 'Connected';
+            statusDiv.style.backgroundColor = '#d4edda';
+
+            stompClient.subscribe('/topic/crypto', function(message) {
+                const data = JSON.parse(message.body);
+                updateCryptoCard(data);
+            });
+
+            stompClient.subscribe('/topic/status', function(message) {
+                statusDiv.textContent = message.body;
+            });
+
+            // Send subscribe message after connection is established
+            if (!isSubscribed) {
+                stompClient.send("/app/subscribe", {}, JSON.stringify(['btcusdt', 'ethusdt']));
+                subscribeBtn.textContent = 'Unsubscribe';
+                isSubscribed = true;
+            }
+
+        }, function(error) {
+             statusDiv.textContent = 'Connection error: ' + error;
+             statusDiv.style.backgroundColor = '#f8d7da';
+             console.error('STOMP error:', error);
+             isSubscribed = false; // Reset subscription status on error
+             subscribeBtn.textContent = 'Subscribe for Updates'; // Reset button text
+             cryptoContainer.innerHTML = ''; // Clear displayed data
+        });
+    }
+
+    function disconnect() {
+         if (stompClient !== null) {
+             stompClient.disconnect();
+             statusDiv.textContent = 'Disconnected';
+             statusDiv.style.backgroundColor = '#f8f9fa';
+             isSubscribed = false;
+             subscribeBtn.textContent = 'Subscribe for Updates';
+             cryptoContainer.innerHTML = '';
+         }
+    }
+
+    function updateCryptoCard(data) {
+        const symbol = data.s;
+        let card = document.getElementById(`crypto-${symbol}`);
+
+        if (!card) {
+            card = document.createElement('div');
+            card.className = 'crypto-card';
+            card.id = `crypto-${symbol}`;
+            cryptoContainer.appendChild(card);
+        }
+
+        const priceChange = parseFloat(data.P);
+        const priceClass = priceChange >= 0 ? 'positive' : 'negative';
+
+        card.innerHTML = `
+            <div class="crypto-header">
+                <div class="crypto-symbol">${symbol}</div>
+                <div class="crypto-price ${priceClass}">$${parseFloat(data.c).toFixed(2)}</div>
+            </div>
+            <div class="crypto-details">
+                <div class="detail-item">
+                    <span class="detail-label">24h Change:</span>
+                    <span class="detail-value ${priceClass}">${parseFloat(data.P).toFixed(2)}%</span>
+                </div>
+            </div>
+        `;
+    }
+
+    subscribeBtn.addEventListener('click', function() {
+        if (!isSubscribed) {
+            connect();
+        } else {
+            stompClient.send("/app/unsubscribe", {});
+            disconnect();
+        }
+    });
+</script>
+</body>
+</html>

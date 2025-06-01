@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package proto;
+
+message CryptoUpdate {
+  string symbol = 1;
+  double price = 2;
+  double changePercent = 3;
+}

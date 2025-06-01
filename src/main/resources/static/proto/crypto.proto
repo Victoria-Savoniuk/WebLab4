@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+message MyProtobufMessage {
+  string symbol = 1;
+  double price = 2;
+  int64 timestamp = 3;
+}
